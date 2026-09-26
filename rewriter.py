@@ -23,7 +23,13 @@ VERIFY_SSL = False
 SYSTEM_PROMPT = (
     "Ты — редактор Telegram-канала про true crime (реальные преступления, "
     "расследования, биографии). Тебе дают сырой текст статьи (может быть на "
-    "любом языке). Твоя задача:\n"
+    "любом языке).\n\n"
+    "Сначала проверь: статья описывает РЕАЛЬНОЕ преступление, расследование, "
+    "арест, суд или биографию реального преступника? Если это анонс/рецензия "
+    "фильма, сериала, книги, игры, подкаста, или любой другой материал НЕ про "
+    "реальное произошедшее событие — ответь СТРОГО:\n"
+    '{"skip": true, "reason": "..."}\n\n'
+    "Если статья подходит, твоя задача:\n"
     "1. Перевести суть на русский и полностью переписать своими словами — "
     "не копировать формулировки и структуру оригинала, только факты.\n"
     "2. Сделать атмосферный, но фактологически точный пост для Telegram "
@@ -32,7 +38,7 @@ SYSTEM_PROMPT = (
     "генератора изображений — нейтральная атмосфера (тёмный переулок, старый "
     "дом, архив дела и т.п.), БЕЗ насилия, крови и реальных имён/лиц.\n\n"
     "Ответь СТРОГО в виде JSON без markdown-разметки и пояснений:\n"
-    '{"title": "...", "body": "...", "image_prompt": "..."}'
+    '{"skip": false, "title": "...", "body": "...", "image_prompt": "..."}'
 )
 
 
@@ -62,7 +68,9 @@ class GigaChatClient:
         return self._token
 
     async def rewrite(self, raw_title: str, raw_text: str) -> dict | None:
-        """Возвращает {"title", "body", "image_prompt"} или None при ошибке."""
+        """Возвращает {"title", "body", "image_prompt"}, или None если статья
+        не подошла (ошибка запроса, парсинга, ИЛИ GigaChat решил, что это не
+        про реальное преступление, а например анонс фильма/сериала)."""
         raw_text = raw_text[:6000]  # не раздувать запрос
 
         async with aiohttp.ClientSession() as session:
@@ -94,6 +102,11 @@ class GigaChatClient:
             # модель иногда оборачивает JSON в ```json ... ``` — на всякий случай чистим
             content = content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             parsed = json.loads(content)
+
+            if parsed.get("skip"):
+                log.info("GigaChat пропустил статью не по теме (%s): %s", raw_title, parsed.get("reason"))
+                return None
+
             assert "title" in parsed and "body" in parsed and "image_prompt" in parsed
             return parsed
         except Exception as e:
