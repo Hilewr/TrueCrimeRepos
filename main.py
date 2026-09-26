@@ -3,7 +3,7 @@ import logging
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import FSInputFile, Message
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import db
@@ -29,6 +29,34 @@ def admin_only(message: Message) -> bool:
     return message.from_user.id in ADMIN_IDS
 
 
+@dp.message(Command("start"))
+async def cmd_start(message: Message):
+    is_admin = admin_only(message)
+    text = (
+        "Привет! Это бот автопостинга True Crime канала.\n\n"
+        f"Твой Telegram ID: {message.from_user.id}\n"
+        f"Статус админа: {'да' if is_admin else 'нет'}\n"
+    )
+    if is_admin:
+        text += (
+            "\nКоманды:\n"
+            "/collect — запустить сбор и рерайт вручную\n"
+            "/queue — очередь постов\n"
+            "/preview <id> — посмотреть готовый пост из очереди\n"
+            "/approve <id> / /reject <id> — модерация\n"
+            "/keywords — активные поисковые фразы\n"
+            "/refresh_keywords — попросить GigaChat придумать новые"
+        )
+    else:
+        text += "\nЕсли это должен быть твой аккаунт-админ — добавь этот ID в переменную ADMIN_IDS и перезапусти бота."
+    await message.answer(text)
+
+
+@dp.message(Command("whoami"))
+async def cmd_whoami(message: Message):
+    await message.answer(f"Твой Telegram ID: {message.from_user.id}")
+
+
 @dp.message(Command("queue"), F.func(admin_only))
 async def cmd_queue(message: Message):
     posts = await db.get_queue()
@@ -39,6 +67,26 @@ async def cmd_queue(message: Message):
     for p in posts:
         lines.append(f"#{p['id']} — {p['title']} (в {p['scheduled_at']})")
     await message.answer("\n".join(lines))
+
+
+@dp.message(Command("preview"), F.func(admin_only))
+async def cmd_preview(message: Message):
+    parts = message.text.split()
+    if len(parts) != 2 or not parts[1].isdigit():
+        await message.answer("Формат: /preview <id>")
+        return
+
+    posts = await db.get_queue(limit=100)
+    post = next((p for p in posts if p["id"] == int(parts[1])), None)
+    if not post:
+        await message.answer("Пост с таким id не найден в очереди.")
+        return
+
+    caption = f"{post['title']}\n\n{post['text']}"[:1024]
+    if post["image_path"]:
+        await message.answer_photo(FSInputFile(post["image_path"]), caption=caption)
+    else:
+        await message.answer(caption)
 
 
 @dp.message(Command("approve"), F.func(admin_only))
