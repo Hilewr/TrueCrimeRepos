@@ -13,6 +13,7 @@ log = logging.getLogger(__name__)
 
 FUSIONBRAIN_URL = "https://api-key.fusionbrain.ai/"
 STYLE_SUFFIX = ", noir photography, grainy, desaturated, atmospheric, cinematic lighting"
+NEGATIVE_PROMPT = "portrait, close-up face, selfie, cute animal, cat, dog, cartoon, anime"
 
 
 async def _fusionbrain_generate(prompt: str) -> bytes | None:
@@ -36,6 +37,7 @@ async def _fusionbrain_generate(prompt: str) -> bytes | None:
                 "numImages": 1,
                 "width": 1024,
                 "height": 1024,
+                "negativePromptDecoder": NEGATIVE_PROMPT,
                 "generateParams": {"query": (prompt + STYLE_SUFFIX)[:1000]},
             }
             form = aiohttp.FormData()
@@ -74,8 +76,13 @@ async def _pollinations_generate(prompt: str) -> bytes | None:
     """Бесплатный вариант без ключей — https://pollinations.ai"""
     import urllib.parse
 
-    encoded = urllib.parse.quote((prompt + STYLE_SUFFIX)[:500])
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true"
+    encoded_prompt = urllib.parse.quote((prompt + STYLE_SUFFIX)[:500])
+    encoded_negative = urllib.parse.quote(NEGATIVE_PROMPT)
+    url = (
+        f"https://image.pollinations.ai/prompt/{encoded_prompt}"
+        f"?width=1024&height=1024&nologo=true&model=flux-realism"
+        f"&negative_prompt={encoded_negative}"
+    )
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=90)) as resp:
@@ -88,6 +95,8 @@ async def _pollinations_generate(prompt: str) -> bytes | None:
 
 async def generate_image(prompt: str) -> str | None:
     """Генерирует картинку и сохраняет на диск, возвращает путь к файлу или None."""
+    log.info("image_prompt: %s", prompt)
+
     image_bytes = await _fusionbrain_generate(prompt)
     if image_bytes is None:
         image_bytes = await _pollinations_generate(prompt)
