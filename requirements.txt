@@ -6,3 +6,4 @@ trafilatura==1.12.2
 apscheduler==3.10.4
 python-dotenv==1.0.1
 googlenewsdecoder==0.2.1
+gnews-decoder
